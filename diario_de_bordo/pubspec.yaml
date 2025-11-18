@@ -1,4 +1,4 @@
-name: hello_world
+name: diario_de_bordo
 
 environment:
   sdk: ^3.8.0-0
@@ -6,7 +6,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  shared_preferences: ^2.0.0
+  sqflite: ^2.0.0+3
+  path: ^1.8.0
 
 
 dev_dependencies:
