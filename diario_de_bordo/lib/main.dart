@@ -1,0 +1,177 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'database_helper.dart';
+import 'summary_screen.dart';
+import 'notification_helper.dart';
+
+void main() => runApp(const DrivingLogApp());
+
+class DrivingLogApp extends StatelessWidget {
+  const DrivingLogApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Diário de Bordo',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: const LogScreen(),
+    );
+  }
+}
+
+class LogScreen extends StatefulWidget {
+  const LogScreen({Key? key}) : super(key: key);
+
+  @override
+  State<LogScreen> createState() => _LogScreenState();
+}
+
+class _LogScreenState extends State<LogScreen> {
+  final Stopwatch _stopwatch = Stopwatch();
+  Timer? _timer;
+  String _formattedTime = '00:00:00';
+  String _status = 'Parado';
+  bool _isRunning = false;
+  DateTime? _startTime;
+  final NotificationHelper _notificationHelper = NotificationHelper();
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationHelper.initNotifications();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), _updateTime);
+  }
+
+  void _startDriving() {
+    setState(() {
+      _status = 'Dirigindo';
+      _isRunning = true;
+      _startTime = DateTime.now();
+    });
+    _stopwatch.reset();
+    _stopwatch.start();
+    _startTimer();
+  }
+
+  void _startResting() {
+    setState(() {
+      _status = 'Descansando';
+      _isRunning = true;
+      _startTime = DateTime.now();
+    });
+    _stopwatch.reset();
+    _stopwatch.start();
+    _startTimer();
+  }
+
+  void _stopTimer() async {
+    final endTime = DateTime.now();
+    if (_startTime != null) {
+      final log = Log(
+        status: _status,
+        startTime: _startTime!.millisecondsSinceEpoch,
+        endTime: endTime.millisecondsSinceEpoch,
+      );
+      await DatabaseHelper().addLog(log);
+    }
+
+    setState(() {
+      _status = 'Parado';
+      _isRunning = false;
+      _startTime = null;
+    });
+    _stopwatch.stop();
+    _stopwatch.reset();
+    _timer?.cancel();
+    _updateTime(null);
+  }
+
+  void _updateTime(Timer? timer) {
+    final elapsed = _stopwatch.elapsed;
+    setState(() {
+      _formattedTime =
+          '${elapsed.inHours.toString().padLeft(2, '0')}:${(elapsed.inMinutes % 60).toString().padLeft(2, '0')}:${(elapsed.inSeconds % 60).toString().padLeft(2, '0')}';
+    });
+
+    if (_status == 'Dirigindo' && elapsed.inSeconds == 18900) {
+      _notificationHelper.showNotification(
+        'Alerta de Condução',
+        'Você está se aproximando do seu limite de tempo de condução.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Diário de Bordo'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SummaryScreen()),
+              );
+            },
+          ),
+        ],
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Text(
+              'Tempo Decorrido:',
+              style: TextStyle(fontSize: 24),
+            ),
+            Text(
+              _formattedTime,
+              style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Status: $_status',
+              style: const TextStyle(fontSize: 24),
+            ),
+            const SizedBox(height: 40),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (!_isRunning)
+                  ElevatedButton(
+                    onPressed: _startDriving,
+                    child: const Text('Iniciar Condução'),
+                  ),
+                if (!_isRunning)
+                  const SizedBox(width: 20),
+                if (!_isRunning)
+                  ElevatedButton(
+                    onPressed: _startResting,
+                    child: const Text('Iniciar Descanso'),
+                  ),
+                if (_isRunning)
+                  ElevatedButton(
+                    onPressed: _stopTimer,
+                    child: const Text('Parar'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
