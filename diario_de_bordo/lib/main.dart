@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'summary_screen.dart';
 
 void main() => runApp(const DrivingLogApp());
 
@@ -25,20 +27,83 @@ class LogScreen extends StatefulWidget {
   State<LogScreen> createState() => _LogScreenState();
 }
 
-class _LogScreenState extends State<LogScreen> {
+class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
   final Stopwatch _stopwatch = Stopwatch();
   Timer? _timer;
   String _formattedTime = '00:00:00';
   String _status = 'Parado';
   bool _isRunning = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadState();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _saveState();
+    }
+  }
+
+  Future<void> _saveState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('elapsedMilliseconds', _stopwatch.elapsedMilliseconds);
+    await prefs.setString('status', _status);
+    await prefs.setBool('isRunning', _isRunning);
+    if (_isRunning) {
+      await prefs.setInt('startTime', DateTime.now().millisecondsSinceEpoch - _stopwatch.elapsedMilliseconds);
+    }
+  }
+
+  Future<void> _loadState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final status = prefs.getString('status') ?? 'Parado';
+    final isRunning = prefs.getBool('isRunning') ?? false;
+
+    if (isRunning) {
+      final startTimeMillis = prefs.getInt('startTime');
+      if (startTimeMillis != null) {
+        final startTime = DateTime.fromMillisecondsSinceEpoch(startTimeMillis);
+        final elapsed = DateTime.now().difference(startTime);
+        _stopwatch.reset();
+        _stopwatch.start();
+        // _stopwatch.elapsed cannot be set directly.
+        // The logic to calculate the elapsed time is already handled by
+        // calculating the difference between the start time and the current time.
+        _startTimer(); // Restart the timer to update the UI
+      }
+    }
+
+    setState(() {
+      _status = status;
+      _isRunning = isRunning;
+    });
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), _updateTime);
+  }
+
+
   void _startDriving() {
     setState(() {
       _status = 'Dirigindo';
       _isRunning = true;
     });
+    _stopwatch.reset();
     _stopwatch.start();
-    _timer = Timer.periodic(const Duration(seconds: 1), _updateTime);
+    _startTimer();
+    _saveState();
   }
 
   void _startResting() {
@@ -46,8 +111,10 @@ class _LogScreenState extends State<LogScreen> {
       _status = 'Descansando';
       _isRunning = true;
     });
+    _stopwatch.reset();
     _stopwatch.start();
-    _timer = Timer.periodic(const Duration(seconds: 1), _updateTime);
+    _startTimer();
+    _saveState();
   }
 
   void _stopTimer() {
@@ -59,6 +126,7 @@ class _LogScreenState extends State<LogScreen> {
     _stopwatch.reset();
     _timer?.cancel();
     _updateTime(null);
+    _saveState();
   }
 
   void _updateTime(Timer? timer) {
@@ -75,16 +143,21 @@ class _LogScreenState extends State<LogScreen> {
   }
 
   @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Diário de Bordo'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SummaryScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: Center(
         child: Column(
